@@ -15,6 +15,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 import builtins
+import time
 
 from typing import TYPE_CHECKING, Iterator, List, Optional, Tuple, Union
 
@@ -119,7 +120,10 @@ class Subset(BaseSubset):
         self.logger.debug(
             f"Trying to read data from {self.__array.id} bounds={slice_converter[self.__bounds]}"
         )
+        start = time.monotonic()
         data = self.__adapter.read_data(self.__array, self.__bounds)
+        end = time.monotonic() - start
+        self.logger.critical(f"local_array_adapter.read_data {end} sec")
         self.logger.info(f"{self!s} data read")
         return data
 
@@ -138,7 +142,10 @@ class Subset(BaseSubset):
         )
         if data is None:
             raise DekerArrayError("Updating data shall not be None")
+        start = time.monotonic()
         self.__adapter.update(self.__array, self.__bounds, data)
+        end = time.monotonic() - start
+        self.logger.critical(f"local_array_adapter.update {end} sec")
         self.logger.info(f"{self!s} data updated")
 
     @not_deleted
@@ -549,7 +556,11 @@ class VSubset(BaseSubset):
             array: "Array" = self._create_array_from_vposition(array_pos.vposition)
             if array:
                 subset: Subset = array[array_pos.bounds]
+                start = time.monotonic()
                 result = subset.read()
+                end = time.monotonic() - start
+                self.logger.critical(f"subset.read {end} sec")
+                self.logger.info(f"{self!s} data read")
             else:
                 result = np.empty(
                     shape=create_shape_from_slice(
@@ -561,8 +572,12 @@ class VSubset(BaseSubset):
             return array_pos.data_slice, result
 
         self.logger.debug(f"Trying to read data from {self!s}")
+
+        start = time.monotonic()
         arrays_data = self.__adapter.executor.map(_read_data, self.__arrays)
         data = self.__sum_results(arrays_data)
+        end = time.monotonic() - start
+        self.logger.critical(f"local_varray_adapter_executor.read_data {end} sec")
         self.logger.info(f"{self!s} data read")
         return data
 
@@ -599,6 +614,7 @@ class VSubset(BaseSubset):
                         pos = array_data.vposition[n]
                         custom_attributes[attr_name] = dim.start_value + dim.step * pos  # type: ignore[operator]
 
+                start = time.monotonic()
                 array = self.__array_adapter.create(
                     {
                         "collection": self.__collection,
@@ -610,8 +626,14 @@ class VSubset(BaseSubset):
                         "custom_attributes": custom_attributes,
                     }
                 )
+                end = time.monotonic() - start
+                self.logger.critical(f"local_array_adapter.create {end} sec")
             subset = array[array_data.bounds]
+
+            start = time.monotonic()
             subset.update(array_data.data)
+            end = time.monotonic() - start
+            self.logger.critical(f"subset.update {end} sec")
 
         self.logger.debug(f"Trying to update data for {self!s}")
         if data is None:
@@ -621,6 +643,7 @@ class VSubset(BaseSubset):
             self.__array.dtype, self.__array.shape, data, self.__bounds
         )
 
+        start = time.monotonic()
         results = self.__adapter.executor.map(
             _update,
             [
@@ -637,4 +660,6 @@ class VSubset(BaseSubset):
                 raise DekerVSubsetError(
                     f"ATTENTION: Data in {self!s} IS NOW CORRUPTED due to the exception above"
                 ).with_traceback(e.__traceback__)
+        end = time.monotonic() - start
+        self.logger.critical(f"local_varray_adapter_executor.update {end} sec")
         self.logger.info(f"{self!s} data updated OK")
